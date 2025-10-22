@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,69 +22,195 @@ public class StringController {
     public StringController(StringService service) { this.service = service; }
 
     // 1. Create/Analyze String
+//    @PostMapping
+//    public ResponseEntity<?> create(@RequestBody Map<String, Object> body) {
+//        if (body == null || !body.containsKey("value")) {
+//            return ResponseEntity.badRequest().body(Map.of("message", "Invalid request body or missing 'value' field"));
+//        }
+//
+//        Object rawValue = body.get("value");
+//
+//        // 422: invalid data type for "value" (must be string)
+//        if (!(rawValue instanceof String)) {
+//            return ResponseEntity.unprocessableEntity().body(Map.of("message", "Invalid request body or missing 'value' field"));
+//        }
+//
+//        String value = (String) rawValue;
+//        try {
+//            AnalyzedString entry = service.create(value);
+//            Map<String, Object> response = toResponse(entry);
+//            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+//        } catch (IllegalStateException ex) {
+//            // 409 Conflict: already exists
+//            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "String already exists in the system"));
+//        } catch (IllegalArgumentException ex) {
+//            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+//        }
+//    }
+
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> create(@RequestBody(required = false) Map<String, Object> body) {
+        // Handle missing or empty body
         if (body == null || !body.containsKey("value")) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Missing 'value' field"));
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid request body or missing 'value' field"));
         }
 
         Object rawValue = body.get("value");
 
-        // 422: invalid data type for "value" (must be string)
+        // Handle invalid data type
         if (!(rawValue instanceof String)) {
-            return ResponseEntity.unprocessableEntity().body(Map.of("message", "'value' must be a string"));
+            return ResponseEntity.unprocessableEntity().body(Map.of("message", "Invalid request body or missing 'value' field"));
         }
 
-        String value = (String) rawValue;
+        String value = ((String) rawValue).trim();
+
+        // Reject empty strings
+        if (value.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid request body or missing 'value' field"));
+        }
+
         try {
-            AnalyzedString entry = service.create(value);
-            Map<String, Object> response = toResponse(entry);
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
-        } catch (IllegalStateException ex) {
-            // 409 Conflict: already exists
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "String already exists"));
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+            var entry = service.create(value);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(entry)); // ✅ 201
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "String already exists in the system")); // ✅ 409
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage())); // fallback 400
         }
     }
+
 
     // 2. Get Specific String by original value
+//    @GetMapping("/{stringValue}")
+//    public ResponseEntity<?> getByValue(@PathVariable("stringValue") String stringValue) {
+//        AnalyzedString entry = service.getByValue(stringValue);
+//        if (entry == null) {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String does not exist in the system"));
+//        }
+//        return ResponseEntity.ok(toResponse(entry));
+//    }
     @GetMapping("/{stringValue}")
-    public ResponseEntity<?> getByValue(@PathVariable("stringValue") String stringValue) {
-        AnalyzedString entry = service.getByValue(stringValue);
-        if (entry == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String not found"));
+    public ResponseEntity<?> getByValue(@PathVariable String stringValue) {
+        var result = service.getByValue(stringValue);
+        if (result == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "String does not exist in the system")); // ✅ 404
         }
-        return ResponseEntity.ok(toResponse(entry));
+        return ResponseEntity.ok(toResponse(result)); // ✅ 200
     }
-
     // 3. Get All Strings with Filtering
+//    @GetMapping
+//    public ResponseEntity<?> listAll(
+//            @RequestParam(required = false) Boolean is_palindrome,
+//            @RequestParam(required = false) Integer min_length,
+//            @RequestParam(required = false) Integer max_length,
+//            @RequestParam(required = false) Integer word_count,
+//            @RequestParam(required = false) String contains_character
+//    ) {
+//        // Basic validation: contains_character must be single char if provided
+//        if (contains_character != null && contains_character.length() != 1) {
+//            return ResponseEntity.badRequest().body(Map.of("message", "contains_character must be a single character"));
+//        }
+//
+//        List<AnalyzedString> filtered = service.filter(is_palindrome, min_length, max_length, word_count, contains_character);
+//        Map<String, Object> resp = new HashMap<>();
+//        resp.put("data", filtered.stream().map(this::toResponse).toList());
+//        resp.put("count", filtered.size());
+//        Map<String, Object> filters = new HashMap<>();
+//        filters.put("is_palindrome", is_palindrome);
+//        filters.put("min_length", min_length);
+//        filters.put("max_length", max_length);
+//        filters.put("word_count", word_count);
+//        filters.put("contains_character", contains_character);
+//        resp.put("filters_applied", filters);
+//        return ResponseEntity.ok(resp);
+//    }
+
     @GetMapping
-    public ResponseEntity<?> listAll(
-            @RequestParam(required = false) Boolean is_palindrome,
-            @RequestParam(required = false) Integer min_length,
-            @RequestParam(required = false) Integer max_length,
-            @RequestParam(required = false) Integer word_count,
+    public ResponseEntity<?> getAllStrings(
+            @RequestParam(required = false) String is_palindrome,
+            @RequestParam(required = false) String min_length,
+            @RequestParam(required = false) String max_length,
+            @RequestParam(required = false) String word_count,
             @RequestParam(required = false) String contains_character
     ) {
-        // Basic validation: contains_character must be single char if provided
-        if (contains_character != null && contains_character.length() != 1) {
-            return ResponseEntity.badRequest().body(Map.of("message", "contains_character must be a single character"));
-        }
+        try {
+            Boolean isPalindrome = null;
+            Integer minLength = null;
+            Integer maxLength = null;
+            Integer wordCount = null;
+            String containsChar = null;
 
-        List<AnalyzedString> filtered = service.filter(is_palindrome, min_length, max_length, word_count, contains_character);
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("data", filtered.stream().map(this::toResponse).toList());
-        resp.put("count", filtered.size());
-        Map<String, Object> filters = new HashMap<>();
-        filters.put("is_palindrome", is_palindrome);
-        filters.put("min_length", min_length);
-        filters.put("max_length", max_length);
-        filters.put("word_count", word_count);
-        filters.put("contains_character", contains_character);
-        resp.put("filters_applied", filters);
-        return ResponseEntity.ok(resp);
+            // --- Parse and validate each query parameter ---
+            if (is_palindrome != null) {
+                if (is_palindrome.equalsIgnoreCase("true")) {
+                    isPalindrome = true;
+                } else if (is_palindrome.equalsIgnoreCase("false")) {
+                    isPalindrome = false;
+                } else {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid value for is_palindrome"));
+                }
+            }
+
+            if (min_length != null) {
+                try {
+                    minLength = Integer.parseInt(min_length);
+                    if (minLength < 0) throw new NumberFormatException();
+                } catch (NumberFormatException e) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "min_length must be a positive integer"));
+                }
+            }
+
+            if (max_length != null) {
+                try {
+                    maxLength = Integer.parseInt(max_length);
+                    if (maxLength < 0) throw new NumberFormatException();
+                } catch (NumberFormatException e) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "max_length must be a positive integer"));
+                }
+            }
+
+            if (word_count != null) {
+                try {
+                    wordCount = Integer.parseInt(word_count);
+                    if (wordCount < 0) throw new NumberFormatException();
+                } catch (NumberFormatException e) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "word_count must be a positive integer"));
+                }
+            }
+
+            if (contains_character != null) {
+                if (contains_character.length() != 1) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "contains_character must be a single character"));
+                }
+                containsChar = contains_character;
+            }
+
+            // --- Filter data ---
+            List<AnalyzedString> results = service.filter(isPalindrome, minLength, maxLength, wordCount, containsChar);
+
+            // --- Build response ---
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("data", results.stream().map(this::toResponse).toList());
+            response.put("count", results.size());
+
+            Map<String, Object> filtersApplied = new LinkedHashMap<>();
+            if (isPalindrome != null) filtersApplied.put("is_palindrome", isPalindrome);
+            if (minLength != null) filtersApplied.put("min_length", minLength);
+            if (maxLength != null) filtersApplied.put("max_length", maxLength);
+            if (wordCount != null) filtersApplied.put("word_count", wordCount);
+            if (containsChar != null) filtersApplied.put("contains_character", containsChar);
+            response.put("filters_applied", filtersApplied);
+
+            return ResponseEntity.ok(response); // ✅ 200 OK
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid query parameters or types"));
+        }
     }
+
+
+
 
     // 4. Natural Language Filtering
     @GetMapping("/filter-by-natural-language")
@@ -120,14 +247,24 @@ public class StringController {
     }
 
     // 5. Delete String
+//    @DeleteMapping("/{stringValue}")
+//    public ResponseEntity<?> delete(@PathVariable String stringValue) {
+//        AnalyzedString entry = service.getByValue(stringValue);
+//        if (entry == null) {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String does not exist in the system"));
+//        }
+//        service.deleteByValue(stringValue);
+//        return ResponseEntity.noContent().build();
+//    }
     @DeleteMapping("/{stringValue}")
     public ResponseEntity<?> delete(@PathVariable String stringValue) {
-        AnalyzedString entry = service.getByValue(stringValue);
-        if (entry == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String does not exist in the system"));
+        var existing = service.getByValue(stringValue);
+        if (existing == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "String does not exist in the system")); // ✅ 404
         }
         service.deleteByValue(stringValue);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.noContent().build(); // ✅ 204
     }
 
     // Utility: convert AnalyzedString to response map with created_at in ISO format
