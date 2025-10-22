@@ -49,55 +49,26 @@ public class StringService {
         if (sha != null) storeById.remove(sha);
     }
 
-//    private AnalyzedString.Properties analyze(String value, String sha) {
-//        int length = value.length();
-//
-//        // is_palindrome: case-insensitive, compare full string as-is (including spaces and punctuation)
-//        String lower = value.toLowerCase(Locale.ROOT);
-//        boolean isPalindrome = new StringBuilder(lower).reverse().toString().equals(lower);
-//
-//        // unique characters: distinct code units (characters)
-////        Set<Integer> uniqueChars = value.chars().boxed().collect(Collectors.toSet());
-//        Set<Integer> uniqueChars = value.toLowerCase(Locale.ROOT)
-//                .chars()
-//                .boxed()
-//                .collect(Collectors.toSet());
-//
-//        int uniqueCount = uniqueChars.size();
-//
-//
-//        // word count: number of whitespace-separated tokens (trim, split on \\s+)
-//        String trimmed = value.trim();
-//        int wordCount = trimmed.isEmpty() ? 0 : trimmed.split("\\s+").length;
-//
-//        // character frequency map: map each character to its count (characters as String)
-//        Map<String, Integer> freq = new LinkedHashMap<>();
-//        value.chars().forEachOrdered(cp -> {
-//            String ch = new String(Character.toChars(cp));
-//            freq.put(ch, freq.getOrDefault(ch, 0) + 1);
-//        });
-//
-//        return new AnalyzedString.Properties(length, isPalindrome, uniqueCount, wordCount, sha, freq);
-//    }
-
     private AnalyzedString.Properties analyze(String value, String sha) {
         int length = value.length();
 
-        // is_palindrome: case-insensitive
+        // Normalize to lowercase for case-insensitive analysis
         String lower = value.toLowerCase(Locale.ROOT);
+
+        // is_palindrome: case-insensitive, compare full string as-is (including spaces and punctuation)
         boolean isPalindrome = new StringBuilder(lower).reverse().toString().equals(lower);
 
-        // ✅ unique characters: distinct letters, case-insensitive
+        // unique characters: distinct code points (case-insensitive because we used lower)
         Set<Integer> uniqueChars = lower.chars().boxed().collect(Collectors.toSet());
         int uniqueCount = uniqueChars.size();
 
-        // word count
+        // word count: number of whitespace-separated tokens (trim, split on \\s+)
         String trimmed = value.trim();
         int wordCount = trimmed.isEmpty() ? 0 : trimmed.split("\\s+").length;
 
-        // character frequency map
+        // character frequency map: build using lowercase characters as keys (strings)
         Map<String, Integer> freq = new LinkedHashMap<>();
-        value.chars().forEachOrdered(cp -> {
+        lower.chars().forEachOrdered(cp -> {
             String ch = new String(Character.toChars(cp));
             freq.put(ch, freq.getOrDefault(ch, 0) + 1);
         });
@@ -105,10 +76,12 @@ public class StringService {
         return new AnalyzedString.Properties(length, isPalindrome, uniqueCount, wordCount, sha, freq);
     }
 
-
     // Filtering: support params described in spec
     public List<AnalyzedString> filter(Boolean isPalindrome, Integer minLength, Integer maxLength,
                                        Integer wordCount, String containsCharacter) {
+        // Normalize containsCharacter to lowercase if provided
+        String containsCharLower = containsCharacter == null ? null : containsCharacter.toLowerCase(Locale.ROOT);
+
         return storeById.values().stream()
                 .filter(e -> {
                     AnalyzedString.Properties p = e.getProperties();
@@ -116,9 +89,9 @@ public class StringService {
                     if (minLength != null && p.getLength() < minLength) return false;
                     if (maxLength != null && p.getLength() > maxLength) return false;
                     if (wordCount != null && p.getWord_count() != wordCount) return false;
-                    if (containsCharacter != null) {
+                    if (containsCharLower != null) {
                         Map<String, Integer> freq = p.getCharacter_frequency_map();
-                        if (!freq.containsKey(containsCharacter)) return false;
+                        if (!freq.containsKey(containsCharLower)) return false;
                     }
                     return true;
                 })

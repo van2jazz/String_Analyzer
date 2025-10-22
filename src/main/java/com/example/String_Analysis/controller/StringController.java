@@ -1,10 +1,5 @@
 package com.example.String_Analysis.controller;
 
-//import com.example.stringanalyzer.dto.CreateStringRequest;
-//import com.example.stringanalyzer.model.AnalyzedString;
-//import com.example.stringanalyzer.service.StringService;
-//import com.example.stringanalyzer.util.NaturalLanguageParser;
-import com.example.String_Analysis.dto.CreateStringRequest;
 import com.example.String_Analysis.model.AnalyzedString;
 import com.example.String_Analysis.service.StringService;
 import com.example.String_Analysis.util.NaturalLanguageParser;
@@ -27,30 +22,38 @@ public class StringController {
 
     // 1. Create/Analyze String
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody CreateStringRequest req) {
-        if (req == null || req.getValue() == null) {
+    public ResponseEntity<?> create(@RequestBody Map<String, Object> body) {
+        if (body == null || !body.containsKey("value")) {
             return ResponseEntity.badRequest().body(Map.of("message", "Missing 'value' field"));
         }
-        if (!(req.getValue() instanceof String)) {
+
+        Object rawValue = body.get("value");
+
+        // 422: invalid data type for "value" (must be string)
+        if (!(rawValue instanceof String)) {
             return ResponseEntity.unprocessableEntity().body(Map.of("message", "'value' must be a string"));
         }
-        String value = req.getValue();
+
+        String value = (String) rawValue;
         try {
             AnalyzedString entry = service.create(value);
-            Map<String, Object> body = toResponse(entry);
-            return ResponseEntity.status(HttpStatus.CREATED).body(body);
+            Map<String, Object> response = toResponse(entry);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalStateException ex) {
+            // 409 Conflict: already exists
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "String already exists"));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
     }
 
-    // 2. Get Specific String by path variable (original string)
+    // 2. Get Specific String by original value
     @GetMapping("/{stringValue}")
     public ResponseEntity<?> getByValue(@PathVariable("stringValue") String stringValue) {
         AnalyzedString entry = service.getByValue(stringValue);
-        if (entry == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Not found"));
+        if (entry == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String not found"));
+        }
         return ResponseEntity.ok(toResponse(entry));
     }
 
@@ -67,6 +70,7 @@ public class StringController {
         if (contains_character != null && contains_character.length() != 1) {
             return ResponseEntity.badRequest().body(Map.of("message", "contains_character must be a single character"));
         }
+
         List<AnalyzedString> filtered = service.filter(is_palindrome, min_length, max_length, word_count, contains_character);
         Map<String, Object> resp = new HashMap<>();
         resp.put("data", filtered.stream().map(this::toResponse).toList());
@@ -86,6 +90,14 @@ public class StringController {
     public ResponseEntity<?> nlFilter(@RequestParam String query) {
         try {
             NaturalLanguageParser.ParseResult parsed = NaturalLanguageParser.parse(query);
+
+            // Basic conflict detection: if both min_length and max_length set and inconsistent
+            Integer minLen = (Integer) parsed.getParsedFilters().get("min_length");
+            Integer maxLen = (Integer) parsed.getParsedFilters().get("max_length");
+            if (minLen != null && maxLen != null && minLen > maxLen) {
+                return ResponseEntity.unprocessableEntity().body(Map.of("message", "Parsed filters conflict: min_length > max_length"));
+            }
+
             @SuppressWarnings("unchecked")
             List<AnalyzedString> result = service.filter(
                     (Boolean) parsed.getParsedFilters().get("is_palindrome"),
@@ -111,7 +123,9 @@ public class StringController {
     @DeleteMapping("/{stringValue}")
     public ResponseEntity<?> delete(@PathVariable String stringValue) {
         AnalyzedString entry = service.getByValue(stringValue);
-        if (entry == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Not found"));
+        if (entry == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "String does not exist in the system"));
+        }
         service.deleteByValue(stringValue);
         return ResponseEntity.noContent().build();
     }
